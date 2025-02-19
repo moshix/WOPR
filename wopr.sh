@@ -15,6 +15,7 @@
 # v0.11 Tic tac toe non-scrolling   
 # v0.12 better user input parsing
 # v0.13 fix NASA game 
+# v0.14 submarine command center fixed map
 
 # ANSI color codes
 GREEN='\033[0;32m'
@@ -853,584 +854,188 @@ function execute_ai_movement() {
     [ ${enemy_depth[$enemy_index]} -gt 200 ] && enemy_depth[$enemy_index]=200
 }
 
-function sub_command_center() {
+function draw_sub_map() {
+    local sub_x=$1
+    local sub_y=$2
+    local sub_depth=$3
+    
+    cat << "MAP"
+    ┌──────────── SUBMARINE TACTICAL DISPLAY ─────────────┐
+    │     0  1  2  3  4  5  6  7  8  9  10 11 12 13 14  │
+    │  0  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │  1  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │  2  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │  3  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │  4  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │  5  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │  6  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │  7  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │  8  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │  9  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  │
+    │                                                     │
+    └─────────────────────────────────────────────────────┘
+
+  COMMANDS: [N]orth [S]outh [E]ast [W]est [U]p [D]own
+  [F]ire Torpedo  [P]ing Sonar  [Q]uit
+
+  ENTER COMMAND:
+MAP
+
+    # Draw submarine position and enemies first
+    tput cup $((sub_y+2)) $((sub_x*3+5))
+    echo -ne "\033[1;32m■\033[0m"  # Green submarine marker
+    
+    # Draw enemy positions
+    for ((i=0; i<enemy_count; i++)); do
+        if [ ${enemy_alive[$i]} -eq 1 ]; then
+            local ex=${enemy_x[$i]}
+            local ey=${enemy_y[$i]}
+            
+            local dx=$((ex - sub_x))
+            local dy=$((ey - sub_y))
+            local distance=$(echo "sqrt($dx^2 + $dy^2)" | bc)
+            
+            if (( $(echo "$distance < 5" | bc -l) )); then
+                tput cup $((ey+2)) $((ex*3+5))
+                case ${enemy_type[$i]} in
+                    0) echo -ne "\033[1;31m▲\033[0m";;  # Attack sub
+                    1) echo -ne "\033[1;31m◆\033[0m";;  # Destroyer
+                    2) echo -ne "\033[1;31m█\033[0m";;  # Carrier
+                esac
+            fi
+        fi
+    done
+    
+    # Draw status lines below map and menu
+    tput cup 17 2
+    printf "DEPTH: %03dm" $sub_depth
+    tput cup 17 17
+    echo -n "SONAR: $([ $sonar -eq 1 ] && echo "ACTIVE" || echo "PASSIVE")"
+    tput cup 17 32
+    echo -n "NOISE: $([ $noise -eq 1 ] && echo "HIGH " || echo "LOW  ")"
+    tput cup 18 2
+    printf "SPEED: %02dkts" $((RANDOM % 20 + 5))
+    tput cup 18 17
+    echo -n "WEAPONS: ARMED"
+    tput cup 18 32
+    printf "BEARING: %03d°" $((RANDOM % 360))
+    
+    # Position cursor at input prompt
+    tput cup 16 15
+}
+
+function sub_command() {
     clear
     cat << "EOF"
     =========================================
-    = SUBMARINE TACTICAL COMMAND CENTER      =
-    = ATLANTIC FLEET - STRATEGIC OPERATIONS  =
+    = SUBMARINE COMMAND CENTER              =
+    = ATLANTIC FLEET OPERATIONS            =
     =========================================
     
-    VESSEL: SSN-752 PASADENA
-    CLASS: LOS ANGELES (688)
-    STATUS: DEEP SILENT RUNNING
+    SYSTEM: SUB/ATL-OPS-117
+    MODE: TACTICAL ENGAGEMENT
+    STATUS: COMBAT READY
     
-    *** CLASSIFIED - EYES ONLY ***
+    *** COMBAT PATROL IN PROGRESS ***
 EOF
-
-    type_text "ACCESSING SUBMARINE TACTICAL SYSTEMS..."
+    
+    type_text "INITIALIZING TACTICAL SYSTEMS..."
     sleep 1
     
-    # Initialize submarine parameters with more realistic values
-    local sub_x=$((RANDOM % 8 + 1))
-    local sub_y=$((RANDOM % 8 + 1))
+    # Initialize submarine position and status
+    local sub_x=7
+    local sub_y=5
     local sub_depth=100
-    local sub_speed=1  # Speed in knots
-    local sub_heading=0
-    local noise_level=20
-    local sonar_mode="PASSIVE"
-    local torpedoes=6
-    local decoys=3
-    local oxygen_level=100
-    local battery_level=100
-    local hull_integrity=100
-    local reactor_temp=normal
-    local ballast_status="neutral"
-    local crew_status="ready"
+    local sonar=0
+    local noise=0
+    local torpedoes=4
     
-    # Add more enemy types and behaviors using parallel arrays
+    # Initialize enemy positions
+    declare -a enemy_x=(2 12 9)
+    declare -a enemy_y=(2 3 7)
+    declare -a enemy_depth=(80 0 0)
+    declare -a enemy_type=(0 1 2)  # 0=sub, 1=destroyer, 2=carrier
+    declare -a enemy_alive=(1 1 1)
     local enemy_count=3
-    local enemy_x=()
-    local enemy_y=()
-    local enemy_depth=()
-    local enemy_type=()  # 0=submarine, 1=destroyer, 2=carrier
-    local enemy_alive=()
-    local enemy_heading=()
-    local enemy_speed=()
-
-    for ((i=0; i<enemy_count; i++)); do
-        enemy_x[$i]=$((RANDOM % 8 + 1))
-        enemy_y[$i]=$((RANDOM % 8 + 1))
-        enemy_depth[$i]=$((RANDOM % 150 + 50))
-        enemy_type[$i]=$((RANDOM % 3))
-        enemy_alive[$i]=1
-        enemy_heading[$i]=$((RANDOM % 360))
-        enemy_speed[$i]=$((RANDOM % 3 + 1))
-    done
-
-    # Add mission objectives
-    local mission_type=$((RANDOM % 3))  # 0=patrol, 1=intercept, 2=escort
-    local mission_complete=0
-    local patrol_points=0
-    local time_remaining=100
-
-    case $mission_type in
-        0) type_text "MISSION: PATROL SECTOR AND ELIMINATE THREATS" ;;
-        1) type_text "MISSION: INTERCEPT ENEMY CARRIER GROUP" ;;
-        2) type_text "MISSION: ESCORT FRIENDLY VESSELS" ;;
-    esac
-    sleep 2
-
-    local turns=0
-    local game_over=0
     
-    while [ $game_over -eq 0 ] && [ $oxygen_level -gt 0 ] && [ $battery_level -gt 0 ] && [ $hull_integrity -gt 0 ]; do
+    while true; do
         clear
-        echo "SUBMARINE WARFARE CONTROL SYSTEM"
-        echo "================================"
-        echo "STATUS:"
-        echo "- Hull Integrity: $hull_integrity%"
-        echo "- Reactor Temperature: $reactor_temp"
-        echo "- Ballast Status: $ballast_status"
-        echo "- Crew Status: $crew_status"
-        echo "- Torpedoes: $torpedoes"
-        echo "- Decoys: $decoys"
-        echo "- Speed: ${sub_speed} knots"
-        echo "- Heading: ${sub_heading}°"
-        echo "- Oxygen: ${oxygen_level}%"
-        echo "- Battery: ${battery_level}%"
-        echo "- Position: ($sub_x, $sub_y, ${sub_depth}m)"
-        echo "- Time Remaining: ${time_remaining}"
+        draw_sub_map $sub_x $sub_y $sub_depth
         
-        # Calculate noise level based on speed and depth
-        noise_level=$(calculate_noise_level $sub_speed $sub_depth)
-        
-        # Show contacts based on sonar mode and noise
-        local detected_x="-"
-        local detected_y="-"
-        local detected_depth=0
-        
-        for ((i=0; i<enemy_count; i++)); do
-            if [ ${enemy_alive[$i]} -eq 1 ]; then
-                local dx=$((enemy_x[$i] - sub_x))
-                local dy=$((enemy_y[$i] - sub_y))
-                local distance=$(echo "sqrt($dx^2 + $dy^2)" | bc)
-                
-                # Detection range varies by sonar mode and noise
-                local detection_range=3
-                if [ "$sonar_mode" == "ACTIVE" ]; then
-                    detection_range=4
-                else
-                    detection_range=$((4 - noise_level / 25))
-                fi
-                
-                if (( $(echo "$distance <= $detection_range" | bc -l) )); then
-                    detected_x=${enemy_x[$i]}
-                    detected_y=${enemy_y[$i]}
-                    detected_depth=${enemy_depth[$i]}
-                    break
-                fi
-            fi
-        done
-        
-        show_sonar_grid $detected_x $detected_y $sub_depth $noise_level $sonar_mode
-        
-        echo
-        echo "COMMANDS:"
-        echo "1. Move submarine (M)"
-        echo "2. Change depth (D)"
-        echo "3. Adjust speed (S)"
-        echo "4. Change heading (H)"
-        echo "5. Toggle sonar (T)"
-        echo "6. Fire torpedo (F)"
-        echo "7. Deploy decoy (Y)"
-        echo "8. Emergency Blow (B)"
-        echo "9. Reactor Control (R)"
-        echo "10. Damage Control (C)"
-        echo "11. Surface and abort (Q)"
-        echo "R. Return to Main Menu"
-        echo "Q. Quit WOPR System"
-        read -p "Enter command: " cmd
-        
-        case $cmd in
-            [Mm])
-                read -p "Enter new X position (1-8): " new_x
-                read -p "Enter new Y position (1-8): " new_y
-                if [[ $new_x =~ ^[1-8]$ ]] && [[ $new_y =~ ^[1-8]$ ]]; then
-                    sub_x=$new_x
-                    sub_y=$new_y
-                    battery_level=$((battery_level - sub_speed))
-                    type_text "Moving to position ($sub_x, $sub_y)"
-                    play_beep
-                fi
+        read -n 1 -s command
+        case $command in
+            [Nn]) # North
+                [ $sub_y -gt 0 ] && sub_y=$((sub_y - 1))
+                noise=1
                 ;;
-            [Dd])
-                read -p "Enter new depth (50-200m): " new_depth
-                if [[ $new_depth =~ ^[0-9]+$ ]] && [ $new_depth -ge 50 ] && [ $new_depth -le 200 ]; then
-                    sub_depth=$new_depth
-                    battery_level=$((battery_level - 2))
-                    type_text "Changing depth to ${sub_depth}m"
-                    play_beep
-                fi
+            [Ss]) # South
+                [ $sub_y -lt 9 ] && sub_y=$((sub_y + 1))
+                noise=1
                 ;;
-            [Ss])
-                read -p "Enter new speed (0-5 knots): " new_speed
-                if [[ $new_speed =~ ^[0-5]$ ]]; then
-                    sub_speed=$new_speed
-                    type_text "Adjusting speed to $sub_speed knots"
-                    play_beep
-                fi
+            [Ee]) # East
+                [ $sub_x -lt 14 ] && sub_x=$((sub_x + 1))
+                noise=1
                 ;;
-            [Hh])
-                read -p "Enter new heading (0-359): " new_heading
-                if [[ $new_heading =~ ^[0-9]+$ ]] && [ $new_heading -ge 0 ] && [ $new_heading -lt 360 ]; then
-                    sub_heading=$new_heading
-                    type_text "Changing heading to ${sub_heading}°"
-                    play_beep
-                fi
+            [Ww]) # West
+                [ $sub_x -gt 0 ] && sub_x=$((sub_x - 1))
+                noise=1
                 ;;
-            [Tt])
-                if [ "$sonar_mode" == "PASSIVE" ]; then
-                    sonar_mode="ACTIVE"
-                    noise_level=$((noise_level + 20))
-                else
-                    sonar_mode="PASSIVE"
-                    noise_level=$((noise_level - 20))
-                fi
-                type_text "Switching to $sonar_mode sonar"
+            [Uu]) # Up
+                [ $sub_depth -gt 0 ] && sub_depth=$((sub_depth - 20))
+                noise=1
+                ;;
+            [Dd]) # Down
+                [ $sub_depth -lt 300 ] && sub_depth=$((sub_depth + 20))
+                noise=1
+                ;;
+            [Pp]) # Ping sonar
+                sonar=1
+                noise=1
                 play_beep
                 ;;
-            [Ff])
+            [Ff]) # Fire torpedo
                 if [ $torpedoes -gt 0 ]; then
                     torpedoes=$((torpedoes - 1))
-                    noise_level=$((noise_level + 30))
-                    
-                    # Check for hits on any enemy
-                    local hit=0
+                    play_alert
+                    # Check for hits on nearby enemies
                     for ((i=0; i<enemy_count; i++)); do
                         if [ ${enemy_alive[$i]} -eq 1 ]; then
-                            if [ ${enemy_x[$i]} -eq $detected_x ] && [ ${enemy_y[$i]} -eq $detected_y ] && [ $((${enemy_depth[$i]} - sub_depth)) -lt 20 ]; then
+                            local dx=$((enemy_x[$i] - sub_x))
+                            local dy=$((enemy_y[$i] - sub_y))
+                            local distance=$(echo "sqrt($dx^2 + $dy^2)" | bc)
+                            if (( $(echo "$distance < 3" | bc -l) )); then
                                 enemy_alive[$i]=0
-                                hit=1
-                                break
+                                tput cup 20 0
+                                type_text "DIRECT HIT ON TARGET!"
+                                sleep 1
                             fi
                         fi
                     done
-                    
-                    if [ $hit -eq 1 ]; then
-                        clear
-                        type_text "DIRECT HIT CONFIRMED"
-                        cat << "EOF"
-                               ____
-                         ___,-'    `-.
-                        |            /
-                        |   *      |
-                        \     ****  \
-                         `-.____,.-'
-EOF
-                        play_alert
-                        type_text "ENEMY VESSEL DESTROYED"
-                        
-                        # Check if all enemies are destroyed
-                        local all_destroyed=1
-                        for ((i=0; i<enemy_count; i++)); do
-                            if [ ${enemy_alive[$i]} -eq 1 ]; then
-                                all_destroyed=0
-                                break
-                            fi
-                        done
-                        
-                        if [ $all_destroyed -eq 1 ]; then
-                            type_text "ALL ENEMY VESSELS ELIMINATED"
-                            game_over=1
-                            break
-                        fi
-                    else
-                        type_text "TORPEDO MISSED TARGET"
-                    fi
-                else
-                    type_text "NO TORPEDOES REMAINING"
                 fi
                 ;;
-            [Yy])
-                if [ $decoys -gt 0 ]; then
-                    decoys=$((decoys - 1))
-                    noise_level=$((noise_level - 20))
-                    type_text "DEPLOYING DECOY"
-                    play_beep
-                else
-                    type_text "NO DECOYS REMAINING"
-                fi
-                ;;
-            [Bb])
-                type_text "EMERGENCY BLOW INITIATED"
-                play_alert
-                sub_depth=50
-                noise_level=$((noise_level + 40))
-                battery_level=$((battery_level - 10))
-                ballast_status="positive"
-                ;;
-            [Rr])
-                type_text "RETURNING TO MAIN MENU..."
+            [Qq]) # Quit
                 return
                 ;;
-            [Qq])
-                type_text "DISCONNECTING FROM WOPR SYSTEM..."
-                sleep 1
-                exit 0
-                ;;
-            [Cc])
-                if [ $hull_integrity -lt 100 ]; then
-                    type_text "DAMAGE CONTROL TEAM DEPLOYED"
-                    hull_integrity=$((hull_integrity + 10))
-                    [ $hull_integrity -gt 100 ] && hull_integrity=100
-                    oxygen_level=$((oxygen_level - 5))
-                else
-                    type_text "NO DAMAGE TO REPAIR"
-                fi
-                ;;
         esac
         
-        # Update game state
-        turns=$((turns + 1))
-        oxygen_level=$((oxygen_level - 1))
-        battery_level=$((battery_level - sub_speed))
+        # Reset noise level after movement
+        [ $noise -eq 1 ] && noise=0
+        [ $sonar -eq 1 ] && sonar=0
         
-        # Enemy movement and attacks
+        # Move enemies
         for ((i=0; i<enemy_count; i++)); do
             if [ ${enemy_alive[$i]} -eq 1 ]; then
-                # Calculate AI tactics based on situation
-                local tactic=$(calculate_submarine_tactics "$sub_x" "$sub_y" "$sub_depth" "$noise_level" "$sonar_mode" "$i")
-                
-                # Execute movement based on tactics
-                execute_ai_movement "$tactic" "$i"
-                
-                # Enemy detection and attack logic
-                if [ ${enemy_type[$i]} -eq 1 ] && [ $sonar_mode == "ACTIVE" ]; then
-                    local dx=$((enemy_x[$i] - sub_x))
-                    local dy=$((enemy_y[$i] - sub_y))
-                    local distance=$(echo "sqrt($dx^2 + $dy^2)" | bc)
-                    
-                    if (( $(echo "$distance <= 2" | bc -l) )); then
-                        clear
-                        type_text "WARNING: DETECTED BY ENEMY DESTROYER"
-                        type_text "DEPTH CHARGES INCOMING"
-                        play_alert
-                        
-                        # More sophisticated damage calculation based on distance and noise
-                        local damage_chance=$((noise_level + (3 - distance) * 20))
-                        if [ $((RANDOM % 100)) -lt $damage_chance ]; then
-                            local damage=$((RANDOM % 30 + 10))
-                            hull_integrity=$((hull_integrity - damage))
-                            type_text "CRITICAL DAMAGE - HULL INTEGRITY AT $hull_integrity%"
-                            if [ $hull_integrity -le 0 ]; then
-                                game_over=2
-                                break
-                            fi
-                        fi
-                    fi
-                fi
+                # Simple AI movement
+                local move=$((RANDOM % 4))
+                case $move in
+                    0) [ ${enemy_x[$i]} -gt 0 ] && enemy_x[$i]=$((enemy_x[$i] - 1));;
+                    1) [ ${enemy_x[$i]} -lt 14 ] && enemy_x[$i]=$((enemy_x[$i] + 1));;
+                    2) [ ${enemy_y[$i]} -gt 0 ] && enemy_y[$i]=$((enemy_y[$i] - 1));;
+                    3) [ ${enemy_y[$i]} -lt 9 ] && enemy_y[$i]=$((enemy_y[$i] + 1));;
+                esac
             fi
         done
-
-        # Update mission objectives
-        case $mission_type in
-            0)  # Patrol
-                patrol_points=$((patrol_points + 1))
-                [ $patrol_points -ge 50 ] && mission_complete=1
-                ;;
-            1)  # Intercept
-                for ((i=0; i<enemy_count; i++)); do
-                    if [ ${enemy_type[$i]} -eq 2 ] && [ ${enemy_alive[$i]} -eq 0 ]; then
-                        mission_complete=1
-                        break
-                    fi
-                done
-                ;;
-            2)  # Escort
-                # Add escort mission logic here
-                ;;
-        esac
-
-        # Add random events
-        if [ $((RANDOM % 20)) -eq 0 ]; then
-            case $((RANDOM % 5)) in
-                0)
-                    type_text "WARNING: REACTOR TEMPERATURE SPIKE"
-                    reactor_temp="critical"
-                    ;;
-                1)
-                    type_text "ALERT: HULL STRESS DETECTED"
-                    hull_integrity=$((hull_integrity - 10))
-                    ;;
-                2)
-                    type_text "CREW FATIGUE INCREASING"
-                    crew_status="tired"
-                    ;;
-                3)
-                    type_text "SONAR MALFUNCTION"
-                    noise_level=$((noise_level + 20))
-                    ;;
-                4)
-                    type_text "EMERGENCY: FLOODING IN COMPARTMENT"
-                    hull_integrity=$((hull_integrity - 20))
-                    ;;
-            esac
-        fi
-
-        # Update time and check victory conditions
-        time_remaining=$((time_remaining - 1))
-        if [ $time_remaining -le 0 ]; then
-            type_text "MISSION TIME EXPIRED"
-            game_over=1
-        elif [ $mission_complete -eq 1 ]; then
-            type_text "MISSION ACCOMPLISHED"
-            game_over=1
-        fi
     done
-    
-    # Enhanced end game messages
-    if [ $game_over -eq 2 ]; then
-        type_text "MISSION FAILED - VESSEL LOST"
-        type_text "CREW CASUALTIES: $((RANDOM % 50 + 50))%"
-    elif [ $oxygen_level -le 0 ]; then
-        type_text "MISSION FAILED - CREW SUFFOCATED"
-    elif [ $battery_level -le 0 ]; then
-        type_text "MISSION FAILED - ALL POWER LOST"
-    elif [ $hull_integrity -le 0 ]; then
-        type_text "MISSION FAILED - HULL BREACH"
-        type_text "VESSEL LOST WITH ALL HANDS"
-    elif [ $mission_complete -eq 1 ]; then
-        type_text "MISSION SUCCESSFUL"
-        type_text "RETURNING TO BASE"
-        echo "Final Statistics:"
-        echo "- Time Remaining: $time_remaining"
-        echo "- Hull Integrity: $hull_integrity%"
-        local destroyed=0
-        for ((i=0; i<enemy_count; i++)); do
-            [ ${enemy_alive[$i]} -eq 0 ] && destroyed=$((destroyed + 1))
-        done
-        echo "- Enemy Vessels Destroyed: $destroyed"
-    fi
-    
-    sleep 3
-}
-
-function calculate_mission_risk() {
-    local phase=$1
-    local fuel=$2
-    local oxygen=$3
-    local power=$4
-    local weather=$5
-    local guidance=$6
-    
-    # Base risk calculation
-    local risk=0
-    
-    # Phase-specific risks
-    case $phase in
-        "pre-launch")
-            case $weather in
-                "storm approaching") risk=$((risk + 40));;
-                "high winds") risk=$((risk + 30));;
-                "lightning warning") risk=$((risk + 50));;
-                "overcast") risk=$((risk + 10));;
-                *) risk=$((risk + 0));;
-            esac
-            [ $fuel -lt 90 ] && risk=$((risk + 20))
-            [ "$guidance" != "nominal" ] && risk=$((risk + 30))
-            ;;
-        "launch")
-            [ $fuel -lt 80 ] && risk=$((risk + 40))
-            [ $power -lt 80 ] && risk=$((risk + 30))
-            [ "$guidance" != "nominal" ] && risk=$((risk + 50))
-            ;;
-        "orbit")
-            [ $fuel -lt 60 ] && risk=$((risk + 30))
-            [ $oxygen -lt 80 ] && risk=$((risk + 40))
-            [ $power -lt 70 ] && risk=$((risk + 30))
-            ;;
-        "transit"|"reentry")
-            [ $fuel -lt 50 ] && risk=$((risk + 50))
-            [ $oxygen -lt 70 ] && risk=$((risk + 60))
-            [ $power -lt 60 ] && risk=$((risk + 40))
-            ;;
-    esac
-    
-    echo $risk
-}
-
-function ai_recommend_action() {
-    local phase=$1
-    local risk=$2
-    local systems_status="$3"
-    
-    if [ $risk -gt 70 ]; then
-        echo "RECOMMEND MISSION ABORT - RISK LEVEL CRITICAL"
-        return
-    fi
-    
-    case $phase in
-        "pre-launch")
-            if [ $risk -gt 40 ]; then
-                echo "RECOMMEND HOLD LAUNCH - CONDITIONS SUBOPTIMAL"
-            else
-                echo "LAUNCH CONDITIONS ACCEPTABLE - PROCEED WITH CHECKLIST"
-            fi
-            ;;
-        "launch")
-            if [ $risk -gt 50 ]; then
-                echo "CAUTION: CONSIDER MISSION ABORT"
-            else
-                echo "CONTINUE LAUNCH SEQUENCE - MONITOR TELEMETRY"
-            fi
-            ;;
-        "orbit")
-            if [ $risk -gt 30 ]; then
-                echo "RECOMMEND ORBITAL ADJUSTMENT"
-            else
-                echo "MAINTAIN CURRENT TRAJECTORY"
-            fi
-            ;;
-        "transit")
-            if [ $risk -gt 40 ]; then
-                echo "RECOMMEND COURSE CORRECTION"
-            else
-                echo "TRAJECTORY NOMINAL - CONTINUE MISSION"
-            fi
-            ;;
-        "reentry")
-            if [ $risk -gt 60 ]; then
-                echo "RECOMMEND EMERGENCY PROCEDURES"
-            else
-                echo "PROCEED WITH STANDARD REENTRY"
-            fi
-            ;;
-    esac
-}
-
-function predict_system_failure() {
-    local system=$1
-    local current_value=$2
-    local trend_data="$3"
-    
-    # Analyze trend data for patterns
-    local failure_probability=0
-    
-    case $system in
-        "fuel")
-            [ $current_value -lt 40 ] && failure_probability=$((failure_probability + 30))
-            [[ $trend_data == *"decreasing"* ]] && failure_probability=$((failure_probability + 20))
-            ;;
-        "oxygen")
-            [ $current_value -lt 60 ] && failure_probability=$((failure_probability + 40))
-            [[ $trend_data == *"leak"* ]] && failure_probability=$((failure_probability + 30))
-            ;;
-        "power")
-            [ $current_value -lt 50 ] && failure_probability=$((failure_probability + 35))
-            [[ $trend_data == *"fluctuation"* ]] && failure_probability=$((failure_probability + 25))
-            ;;
-        "guidance")
-            [[ $trend_data == *"drift"* ]] && failure_probability=$((failure_probability + 45))
-            ;;
-    esac
-    
-    echo $failure_probability
-}
-
-function draw_orbit_map() {
-    local phase=$1  # 0-49 for orbit position
-    
-    cat << "MAP"
-    ┌──────────────── NASA MISSION CONTROL - ORBITAL TRACKING ────────────────────────────────────────────────────┐
-    │                      ┌─────────┐              ┌──────┐             ┌─────────┐                            │
-    │                      │  NORTH  │              │      │             │         │                            │
-    │                      │ AMERICA │              │EUROPE│             │  ASIA   │                            │
-    │     Pacific          └─────────┘   Atlantic   └──────┘             └─────────┘           Pacific         │
-    │      Ocean             .-'``'-.     Ocean                             .-'``'-.            Ocean          │
-    │                      ,'        `.                                   ,'        `.                          │
-    │            .--.    ,'           `.    ┌────────┐                 ,'            `.                        │
-    │           /    \  /               \   │ AFRICA │                /                \                       │
-    │          /      \/                 \  └────────┘              /                  \                      │
-    │         /     South                 \                        /                    \                      │
-    │        /     America                 \                     /                      \                      │
-    │       /                              |                   /         ┌──────────┐    \                     │
-    │      /                               |                  /          │AUSTRALIA │     \                    │
-    │     /                                |                 /           └──────────┘      \                   │
-    │    /                                 |                /                               \                  │
-    │                                                                                                         │
-    │ ORBIT: 408km LEO    PERIOD: 92.7min    VELOCITY: 7.66km/s    INCLINATION: 51.6°    SAT-ID: USA-247   │
-    └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-MAP
-
-    # Orbit positions for sinusoidal path (x,y) with 50 points
-    local -a orbit_x=(
-        15 17 19 21 23 25 27 29 31 33 35 37 39 41 43 45 47 49 51 53 55 57 59 61 63
-        65 67 69 71 73 75 77 79 81 83 85 83 81 79 77 75 73 71 69 67 65 63 61 59 57
-    )
-    local -a orbit_y=(
-        8  7  6  5  4  4  3  3  3  3  4  4  5  5  6  7  8  8  9  9  8  8  7  7  6
-        6  5  5  4  4  3  3  3  3  4  4  5  5  6  6  7  7  8  8  9  9  8  7  6  5
-    )
-    
-    # Draw complete orbit path first
-    for ((i=0; i<50; i++)); do
-        if [ $i -ne $phase ]; then
-            tput cup $((orbit_y[$i]+2)) $((orbit_x[$i]+2))
-            echo -ne "\033[90m·\033[0m"  # Dim gray orbit markers
-        fi
-    done
-    
-    # Draw satellite at current position
-    tput cup $((orbit_y[$phase]+2)) $((orbit_x[$phase]+2))
-    echo -ne "\033[1;33m■\033[0m"  # Bright yellow satellite marker
-    
-    # Draw ground track
-    local track_y=$((orbit_y[$phase] + 4))
-    [ $track_y -gt 15 ] && track_y=15
-    [ $track_y -lt 6 ] && track_y=6
-    tput cup $track_y $((orbit_x[$phase]+2))
-    echo -ne "\033[2;37m+\033[0m"
 }
 
 function nasa_control() {
@@ -1912,6 +1517,120 @@ EOF
             return
             ;;
     esac
+}
+
+function sub_command_center() {
+    clear
+    cat << "EOF"
+    =========================================
+    = SUBMARINE COMMAND CENTER              =
+    = ATLANTIC FLEET OPERATIONS            =
+    =========================================
+    
+    SYSTEM: SUB/ATL-OPS-117
+    MODE: TACTICAL ENGAGEMENT
+    STATUS: COMBAT READY
+    
+    *** COMBAT PATROL IN PROGRESS ***
+EOF
+    
+    type_text "INITIALIZING TACTICAL SYSTEMS..."
+    sleep 1
+    
+    # Initialize submarine position and status
+    local sub_x=7
+    local sub_y=5
+    local sub_depth=100
+    local sonar=0
+    local noise=0
+    local torpedoes=4
+    
+    # Initialize enemy positions
+    declare -a enemy_x=(2 12 9)
+    declare -a enemy_y=(2 3 7)
+    declare -a enemy_depth=(80 0 0)
+    declare -a enemy_type=(0 1 2)  # 0=sub, 1=destroyer, 2=carrier
+    declare -a enemy_alive=(1 1 1)
+    local enemy_count=3
+    
+    while true; do
+        clear
+        draw_sub_map $sub_x $sub_y $sub_depth
+        
+        read -n 1 -s command
+        case $command in
+            [Nn]) # North
+                [ $sub_y -gt 0 ] && sub_y=$((sub_y - 1))
+                noise=1
+                ;;
+            [Ss]) # South
+                [ $sub_y -lt 9 ] && sub_y=$((sub_y + 1))
+                noise=1
+                ;;
+            [Ee]) # East
+                [ $sub_x -lt 14 ] && sub_x=$((sub_x + 1))
+                noise=1
+                ;;
+            [Ww]) # West
+                [ $sub_x -gt 0 ] && sub_x=$((sub_x - 1))
+                noise=1
+                ;;
+            [Uu]) # Up
+                [ $sub_depth -gt 0 ] && sub_depth=$((sub_depth - 20))
+                noise=1
+                ;;
+            [Dd]) # Down
+                [ $sub_depth -lt 300 ] && sub_depth=$((sub_depth + 20))
+                noise=1
+                ;;
+            [Pp]) # Ping sonar
+                sonar=1
+                noise=1
+                play_beep
+                ;;
+            [Ff]) # Fire torpedo
+                if [ $torpedoes -gt 0 ]; then
+                    torpedoes=$((torpedoes - 1))
+                    play_alert
+                    # Check for hits on nearby enemies
+                    for ((i=0; i<enemy_count; i++)); do
+                        if [ ${enemy_alive[$i]} -eq 1 ]; then
+                            local dx=$((enemy_x[$i] - sub_x))
+                            local dy=$((enemy_y[$i] - sub_y))
+                            local distance=$(echo "sqrt($dx^2 + $dy^2)" | bc)
+                            if (( $(echo "$distance < 3" | bc -l) )); then
+                                enemy_alive[$i]=0
+                                tput cup 20 0
+                                type_text "DIRECT HIT ON TARGET!"
+                                sleep 1
+                            fi
+                        fi
+                    done
+                fi
+                ;;
+            [Qq]) # Quit
+                return
+                ;;
+        esac
+        
+        # Reset noise level after movement
+        [ $noise -eq 1 ] && noise=0
+        [ $sonar -eq 1 ] && sonar=0
+        
+        # Move enemies
+        for ((i=0; i<enemy_count; i++)); do
+            if [ ${enemy_alive[$i]} -eq 1 ]; then
+                # Simple AI movement
+                local move=$((RANDOM % 4))
+                case $move in
+                    0) [ ${enemy_x[$i]} -gt 0 ] && enemy_x[$i]=$((enemy_x[$i] - 1));;
+                    1) [ ${enemy_x[$i]} -lt 14 ] && enemy_x[$i]=$((enemy_x[$i] + 1));;
+                    2) [ ${enemy_y[$i]} -gt 0 ] && enemy_y[$i]=$((enemy_y[$i] - 1));;
+                    3) [ ${enemy_y[$i]} -lt 9 ] && enemy_y[$i]=$((enemy_y[$i] + 1));;
+                esac
+            fi
+        done
+    done
 }
 
 function main_loop() {
