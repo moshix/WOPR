@@ -109,7 +109,8 @@ EOF
     echo
     
     # Cancel the timer since login was successful
-    kill $timer_pid 2>/dev/null
+    kill $timer_pid >/dev/null 2>&1
+    wait $timer_pid 2>/dev/null  # Wait for the process to finish
     
     # Show "processing" animation
     echo -n "AUTHENTICATING"
