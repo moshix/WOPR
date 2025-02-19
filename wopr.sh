@@ -14,6 +14,7 @@
 # v0.10 time out for login (to not keep docker container )
 # v0.11 Tic tac toe non-scrolling   
 # v0.12 better user input parsing
+# v0.13 fix NASA game 
 
 # ANSI color codes
 GREEN='\033[0;32m'
@@ -115,7 +116,7 @@ EOF
     
     # Show "processing" animation
     echo -n "AUTHENTICATING"
-    for i in {1..3}; do
+    for i in {1..2}; do
         sleep 0.1
         echo -n "."
         #play_beep
@@ -1377,656 +1378,151 @@ function predict_system_failure() {
     echo $failure_probability
 }
 
+function draw_orbit_map() {
+    local phase=$1  # 0-49 for orbit position
+    
+    cat << "MAP"
+    ┌──────────────── NASA MISSION CONTROL - ORBITAL TRACKING ────────────────────────────────────────────────────┐
+    │                      ┌─────────┐              ┌──────┐             ┌─────────┐                            │
+    │                      │  NORTH  │              │      │             │         │                            │
+    │                      │ AMERICA │              │EUROPE│             │  ASIA   │                            │
+    │     Pacific          └─────────┘   Atlantic   └──────┘             └─────────┘           Pacific         │
+    │      Ocean             .-'``'-.     Ocean                             .-'``'-.            Ocean          │
+    │                      ,'        `.                                   ,'        `.                          │
+    │            .--.    ,'           `.    ┌────────┐                 ,'            `.                        │
+    │           /    \  /               \   │ AFRICA │                /                \                       │
+    │          /      \/                 \  └────────┘              /                  \                      │
+    │         /     South                 \                        /                    \                      │
+    │        /     America                 \                     /                      \                      │
+    │       /                              |                   /         ┌──────────┐    \                     │
+    │      /                               |                  /          │AUSTRALIA │     \                    │
+    │     /                                |                 /           └──────────┘      \                   │
+    │    /                                 |                /                               \                  │
+    │                                                                                                         │
+    │ ORBIT: 408km LEO    PERIOD: 92.7min    VELOCITY: 7.66km/s    INCLINATION: 51.6°    SAT-ID: USA-247   │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+MAP
+
+    # Orbit positions for sinusoidal path (x,y) with 50 points
+    local -a orbit_x=(
+        15 17 19 21 23 25 27 29 31 33 35 37 39 41 43 45 47 49 51 53 55 57 59 61 63
+        65 67 69 71 73 75 77 79 81 83 85 83 81 79 77 75 73 71 69 67 65 63 61 59 57
+    )
+    local -a orbit_y=(
+        8  7  6  5  4  4  3  3  3  3  4  4  5  5  6  7  8  8  9  9  8  8  7  7  6
+        6  5  5  4  4  3  3  3  3  4  4  5  5  6  6  7  7  8  8  9  9  8  7  6  5
+    )
+    
+    # Draw complete orbit path first
+    for ((i=0; i<50; i++)); do
+        if [ $i -ne $phase ]; then
+            tput cup $((orbit_y[$i]+2)) $((orbit_x[$i]+2))
+            echo -ne "\033[90m·\033[0m"  # Dim gray orbit markers
+        fi
+    done
+    
+    # Draw satellite at current position
+    tput cup $((orbit_y[$phase]+2)) $((orbit_x[$phase]+2))
+    echo -ne "\033[1;33m■\033[0m"  # Bright yellow satellite marker
+    
+    # Draw ground track
+    local track_y=$((orbit_y[$phase] + 4))
+    [ $track_y -gt 15 ] && track_y=15
+    [ $track_y -lt 6 ] && track_y=6
+    tput cup $track_y $((orbit_x[$phase]+2))
+    echo -ne "\033[2;37m+\033[0m"
+}
+
 function nasa_control() {
     clear
     cat << "EOF"
     =========================================
-    = NATIONAL AERONAUTICS AND SPACE ADMIN. =
-    = MISSION CONTROL CENTER - HOUSTON, TX  =
+    = NASA MISSION CONTROL                  =
+    = SATELLITE OPERATIONS CENTER          =
     =========================================
     
-    TERMINAL: MCC-H PRIMARY FLIGHT CONTROL
-    SYSTEM: LAUNCH OPERATIONS AND TELEMETRY
-    ACCESS LEVEL: FLIGHT DIRECTOR
+    SYSTEM: NASA/TRACK-SAT-5
+    MODE: ORBITAL OPERATIONS
+    STATUS: NOMINAL
     
-    *** RESTRICTED ACCESS - AUTHORIZED PERSONNEL ONLY ***
+    *** MISSION IN PROGRESS ***
 EOF
-
-    type_text "ACCESSING NASA MISSION CONTROL SYSTEMS..."
+    
+    type_text "INITIALIZING SATELLITE TRACKING..."
     sleep 1
-
-    # Initialize mission parameters
-    local mission_type=$((RANDOM % 3))  # 0=LEO, 1=Moon, 2=Mars
-    local mission_phase="pre-launch"
-    local countdown=60
-    local fuel_level=100
-    local oxygen_level=100
-    local power_level=100
-    local crew_status="ready"
-    local comms_status="nominal"
-    local weather_condition="clear"
-    local system_checks=0
-    local abort_status="none"
-    local mission_success=0
     
-    # Additional mission parameters
-    local trajectory_status="nominal"
-    local guidance_system="nominal"
-    local booster_status="ready"
-    local payload_status="secured"
-    local launch_window_optimal=1
-    local ground_control_ready=0
-    local mission_elapsed_time=0
-    local orbital_parameters="pending"
-    local reentry_status="n/a"
-    local landing_coordinates="pending"
+    local orbit_phase=0
+    local mission_time=0
+    local telemetry_status="NOMINAL"
+    local data_status="RECEIVING"
+    local signal_strength=98
     
-    # Mission-specific parameters
-    case $mission_type in
-        0)  # LEO Mission
-            mission_name="ORBITAL STATION RESUPPLY"
-            target_altitude=400
-            target_inclination=51.6
-            payload_mass=2000
-            mission_duration=180  # minutes
-            ;;
-        1)  # Lunar Mission
-            mission_name="ARTEMIS LUNAR MISSION"
-            target_altitude=384400
-            target_inclination=28.5
-            payload_mass=15000
-            mission_duration=480  # minutes
-            ;;
-        2)  # Mars Mission
-            mission_name="MARS SAMPLE RETURN"
-            target_altitude=225000000
-            target_inclination=25.0
-            payload_mass=3000
-            mission_duration=720  # minutes
-            ;;
-    esac
-
-    function show_mission_status() {
+    while true; do
         clear
-        echo "NASA MISSION CONTROL - $mission_name"
-        echo "=================================="
-        echo "MISSION PHASE: $mission_phase"
-        echo "MET: T+${mission_elapsed_time}m"
-        [ "$mission_phase" == "pre-launch" ] && echo "COUNTDOWN: T-${countdown}"
-        echo
         
-        echo "PRIMARY SYSTEMS:"
-        echo "- Propulsion: ${fuel_level}%"
-        echo "- Life Support: ${oxygen_level}%"
-        echo "- Power: ${power_level}%"
-        echo "- Guidance: $guidance_system"
-        echo "- Communications: $comms_status"
-        echo
+        # Draw the orbit map with current satellite position
+        draw_orbit_map $orbit_phase
         
-        echo "FLIGHT STATUS:"
-        echo "- Trajectory: $trajectory_status"
-        echo "- Orbital Parameters: $orbital_parameters"
-        echo "- Crew Status: $crew_status"
-        echo "- Weather: $weather_condition"
-        [ "$mission_phase" == "reentry" ] && echo "- Landing Coordinates: $landing_coordinates"
-        echo
+        # Show mission status below the map
+        tput cup 18 0
+        echo -e "\033[1mMISSION STATUS:\033[0m"
+        printf "TIME: T+%04dmin   SIGNAL: %d%%   ORBIT: %d°\n" $mission_time $signal_strength $((orbit_phase * 30))
+        echo "TELEMETRY: $telemetry_status"
+        echo "DATA LINK: $data_status"
         
-        echo "MISSION CHECKS: $system_checks/10"
-        echo
-        echo "AI MISSION CONTROL ASSISTANT:"
-        local current_risk=$(calculate_mission_risk "$mission_phase" $fuel_level $oxygen_level $power_level "$weather_condition" "$guidance_system")
-        echo "Current Risk Assessment: ${current_risk}%"
-        ai_recommend_action "$mission_phase" $current_risk "$system_status"
+        # Show command prompt
+        tput cup 22 0
+        echo "COMMANDS: [A]djust Orbit  [T]elemetry  [C]omms  [Q]uit"
+        read -t 1 -n 1 command
         
-        # Show predictive warnings
-        for system in "fuel" "oxygen" "power" "guidance"; do
-            local value
-            local trend=""
-            case $system in
-                "fuel") value=$fuel_level; trend="$fuel_trend";;
-                "oxygen") value=$oxygen_level; trend="$oxygen_trend";;
-                "power") value=$power_level; trend="$power_trend";;
-                "guidance") value=0; trend="$guidance_trend";;
-            esac
-            
-            local failure_prob=$(predict_system_failure "$system" $value "$trend")
-            if [ $failure_prob -gt 60 ]; then
-                echo "WARNING: $system system showing high failure probability (${failure_prob}%)"
-            elif [ $failure_prob -gt 30 ]; then
-                echo "CAUTION: $system system requires attention (${failure_prob}%)"
-            fi
-        done
-    }
-
-    function perform_system_check() {
-        local system=$1
-        type_text "CHECKING $system SYSTEMS..."
-        sleep 1
+        case $command in
+            [Aa])
+                tput cup 23 0
+                type_text "ORBITAL ADJUSTMENT IN PROGRESS..."
+                signal_strength=$((signal_strength - 5))
+                sleep 1
+                ;;
+            [Tt])
+                tput cup 23 0
+                type_text "DOWNLOADING TELEMETRY DATA..."
+                telemetry_status="DOWNLOADING"
+                sleep 1
+                telemetry_status="NOMINAL"
+                ;;
+            [Cc])
+                tput cup 23 0
+                type_text "TESTING COMMUNICATION LINK..."
+                data_status="TESTING"
+                sleep 1
+                data_status="RECEIVING"
+                signal_strength=$((signal_strength + 5))
+                ;;
+            [Qq])
+                tput cup 23 0
+                type_text "ENDING MISSION CONTROL SESSION..."
+                sleep 1
+                return
+                ;;
+        esac
         
-        local check_result=$((RANDOM % 10))
-        if [ $check_result -gt 7 ]; then
-            type_text "WARNING: ANOMALY DETECTED IN $system"
-            return 1
-        else
-            type_text "$system CHECK PASSED"
-            return 0
+        # Update orbit position and mission time
+        orbit_phase=$(( (orbit_phase + 1) % 50 ))  # Changed from 16 to 50
+        mission_time=$((mission_time + 1))
+        
+        # Random events and signal fluctuation
+        signal_strength=$((signal_strength + (RANDOM % 3) - 1))
+        [ $signal_strength -gt 100 ] && signal_strength=100
+        [ $signal_strength -lt 60 ] && signal_strength=60
+        
+        if [ $((RANDOM % 50)) -eq 0 ]; then
+            telemetry_status="DEGRADED"
+            signal_strength=$((signal_strength - 10))
         fi
-    }
-
-    function calculate_trajectory() {
-        local current_phase=$1
-        local fuel=$2
-        local guidance=$3
-        
-        if [ "$guidance" != "nominal" ]; then
-            trajectory_status="error"
-            return 1
+        if [ $((RANDOM % 40)) -eq 0 ]; then
+            data_status="WEAK SIGNAL"
+            signal_strength=$((signal_strength - 15))
         fi
-        
-        if [ $fuel -lt 50 ]; then
-            trajectory_status="critical"
-            return 1
-        fi
-        
-        case $current_phase in
-            "launch")
-                if [ $fuel -gt 80 ]; then
-                    trajectory_status="optimal"
-                else
-                    trajectory_status="suboptimal"
-                fi
-                ;;
-            "orbit")
-                if [ $fuel -gt 60 ]; then
-                    trajectory_status="stable"
-                else
-                    trajectory_status="unstable"
-                fi
-                ;;
-            "transit")
-                if [ $fuel -gt 70 ]; then
-                    trajectory_status="on course"
-                else
-                    trajectory_status="deviation detected"
-                fi
-                ;;
-        esac
-        return 0
-    }
-
-    while [ $countdown -gt 0 ] && [ "$abort_status" == "none" ]; do
-        show_mission_status
-        
-        echo
-        echo "COMMANDS:"
-        case $mission_phase in
-            "pre-launch")
-                echo "1. Perform System Check (S)"
-                echo "2. Monitor Weather (W)"
-                echo "3. Check Launch Window (L)"
-                echo "4. Review Flight Plan (F)"
-                echo "5. Ground Control Status (G)"
-                echo "6. Begin Launch Sequence (B)"
-                echo "7. Emergency Abort (A)"
-                echo "R. Return to Main Menu"
-                echo "Q. Quit WOPR System"
-                ;;
-            "launch")
-                echo "1. Monitor Telemetry (T)"
-                echo "2. Adjust Trajectory (J)"
-                echo "3. Check Booster Status (B)"
-                echo "4. Emergency Abort (A)"
-                echo "R. Return to Main Menu"
-                echo "Q. Quit WOPR System"
-                ;;
-            "orbit")
-                echo "1. Orbital Maneuvers (M)"
-                echo "2. Check Systems (S)"
-                echo "3. Communicate with Crew (C)"
-                echo "4. Adjust Power (P)"
-                echo "R. Return to Main Menu"
-                echo "Q. Quit WOPR System"
-                ;;
-            "transit")
-                echo "1. Course Correction (C)"
-                echo "2. Check Life Support (L)"
-                echo "3. Monitor Radiation (R)"
-                echo "4. Adjust Systems (S)"
-                echo "R. Return to Main Menu"
-                echo "Q. Quit WOPR System"
-                ;;
-            "reentry")
-                echo "1. Monitor Heat Shield (H)"
-                echo "2. Calculate Landing (L)"
-                echo "3. Deploy Chutes (C)"
-                echo "4. Emergency Procedures (E)"
-                echo "R. Return to Main Menu"
-                echo "Q. Quit WOPR System"
-                ;;
-        esac
-        
-        read -p "Enter command: " cmd
-        
-        case $mission_phase in
-            "pre-launch")
-                case $cmd in
-                    [Ss])
-                        if [ $system_checks -lt 10 ]; then
-                            local systems=("PROPULSION" "LIFE_SUPPORT" "GUIDANCE" "COMMUNICATIONS" "PAYLOAD")
-                            local checked=0
-                            
-                            # AI pre-check analysis
-                            type_text "AI ASSISTANT: PERFORMING PRE-CHECK ANALYSIS"
-                            local critical_systems=()
-                            for sys in "${systems[@]}"; do
-                                local failure_prob=$(predict_system_failure "$sys" 100 "pre-check")
-                                if [ $failure_prob -gt 40 ]; then
-                                    critical_systems+=("$sys")
-                                fi
-                            done
-                            
-                            if [ ${#critical_systems[@]} -gt 0 ]; then
-                                echo "RECOMMENDED PRIORITY CHECKS:"
-                                for sys in "${critical_systems[@]}"; do
-                                    echo "- $sys (High Risk)"
-                                done
-                            fi
-                            
-                            # Perform checks with AI monitoring
-                            for sys in "${systems[@]}"; do
-                                if perform_system_check "$sys"; then
-                                    checked=$((checked + 1))
-                                else
-                                    # AI suggests recovery actions
-                                    type_text "AI ASSISTANT: ANALYZING FAILURE MODE"
-                                    case $sys in
-                                        "PROPULSION")
-                                            type_text "RECOMMENDED ACTION: INITIATE FUEL SYSTEM PURGE"
-                                            type_text "ALTERNATIVE: SWITCH TO BACKUP PUMP"
-                                            ;;
-                                        "LIFE_SUPPORT")
-                                            type_text "RECOMMENDED ACTION: ACTIVATE REDUNDANT SYSTEMS"
-                                            type_text "ALTERNATIVE: REDUCE SYSTEM LOAD"
-                                            ;;
-                                        "GUIDANCE")
-                                            type_text "RECOMMENDED ACTION: RECALIBRATE IMU"
-                                            type_text "ALTERNATIVE: SWITCH TO BACKUP GUIDANCE"
-                                            ;;
-                                        "COMMUNICATIONS")
-                                            type_text "RECOMMENDED ACTION: SWITCH FREQUENCIES"
-                                            type_text "ALTERNATIVE: DEPLOY BACKUP ANTENNA"
-                                            ;;
-                                        "PAYLOAD")
-                                            type_text "RECOMMENDED ACTION: VERIFY PAYLOAD LOCKS"
-                                            type_text "ALTERNATIVE: ADJUST MOUNTING TENSION"
-                                            ;;
-                                    esac
-                                fi
-                            done
-                            system_checks=$((system_checks + checked))
-                        else
-                            type_text "ALL SYSTEM CHECKS COMPLETE"
-                        fi
-                        ;;
-                    [Ww])
-                        type_text "CHECKING WEATHER CONDITIONS..."
-                        case $((RANDOM % 5)) in
-                            0) weather_condition="storm approaching" ;;
-                            1) weather_condition="high winds" ;;
-                            2) weather_condition="clear" ;;
-                            3) weather_condition="overcast" ;;
-                            4) weather_condition="lightning warning" ;;
-                        esac
-                        type_text "WEATHER STATUS: $weather_condition"
-                        ;;
-                    [Ll])
-                        type_text "CHECKING LAUNCH WINDOW..."
-                        calculate_trajectory "launch" $fuel_level "$guidance_system"
-                        type_text "LAUNCH WINDOW STATUS: $trajectory_status"
-                        ;;
-                    [Ff])
-                        type_text "REVIEWING FLIGHT PLAN..."
-                        sleep 2
-                        ;;
-                    [Gg])
-                        type_text "GROUND CONTROL STATUS..."
-                        ground_control_ready=1
-                        ;;
-                    [Bb])
-                        type_text "INITIATING LAUNCH SEQUENCE..."
-                        play_alert
-                        for i in {10..1}; do
-                            echo "T-$i"
-                            play_beep
-                            sleep 1
-                        done
-                        
-                        if [ $fuel_level -gt 80 ] && [ $power_level -gt 80 ] && [ $oxygen_level -gt 80 ]; then
-                            type_text "LIFTOFF - WE HAVE LIFTOFF"
-                            mission_success=1
-                            break
-                        else
-                            type_text "LAUNCH ABORT - SYSTEM PARAMETERS OUT OF RANGE"
-                            abort_status="technical"
-                        fi
-                        ;;
-                    [Aa])
-                        type_text "INITIATING EMERGENCY ABORT..."
-                        play_alert
-                        abort_status="manual"
-                        break
-                        ;;
-                    [Rr])
-                        type_text "RETURNING TO MAIN MENU..."
-                        return
-                        ;;
-                    [Qq])
-                        type_text "DISCONNECTING FROM WOPR SYSTEM..."
-                        sleep 1
-                        exit 0
-                        ;;
-                esac
-                ;;
-            "launch")
-                case $cmd in
-                    [Tt])
-                        type_text "MONITORING TELEMETRY..."
-                        calculate_trajectory "launch" $fuel_level "$guidance_system"
-                        type_text "TRAJECTORY STATUS: $trajectory_status"
-                        ;;
-                    [Jj])
-                        type_text "ADJUSTING TRAJECTORY..."
-                        calculate_trajectory "launch" $fuel_level "$guidance_system"
-                        type_text "TRAJECTORY STATUS: $trajectory_status"
-                        ;;
-                    [Bb])
-                        type_text "CHECKING BOOSTER STATUS..."
-                        calculate_trajectory "launch" $fuel_level "$guidance_system"
-                        type_text "BOOSTER STATUS: $booster_status"
-                        ;;
-                    [Aa])
-                        type_text "INITIATING EMERGENCY ABORT..."
-                        play_alert
-                        abort_status="manual"
-                        break
-                        ;;
-                    [Rr])
-                        type_text "RETURNING TO MAIN MENU..."
-                        return
-                        ;;
-                    [Qq])
-                        type_text "DISCONNECTING FROM WOPR SYSTEM..."
-                        sleep 1
-                        exit 0
-                        ;;
-                esac
-                ;;
-            "orbit")
-                case $cmd in
-                    [Mm])
-                        type_text "ORBITAL MANEUVERS..."
-                        calculate_trajectory "orbit" $fuel_level "$guidance_system"
-                        type_text "TRAJECTORY STATUS: $trajectory_status"
-                        ;;
-                    [Ss])
-                        type_text "CHECKING SYSTEMS..."
-                        calculate_trajectory "orbit" $fuel_level "$guidance_system"
-                        type_text "SYSTEM STATUS: $trajectory_status"
-                        ;;
-                    [Cc])
-                        type_text "COMMUNICATING WITH CREW..."
-                        sleep 2
-                        ;;
-                    [Pp])
-                        echo "POWER SYSTEM CONTROL:"
-                        echo "1. Increase Power"
-                        echo "2. Decrease Power"
-                        echo "3. Run Diagnostics"
-                        read -p "Select option: " power_cmd
-                        case $power_cmd in
-                            1) 
-                                power_level=$((power_level + 10))
-                                [ $power_level -gt 100 ] && power_level=100
-                                type_text "POWER INCREASED TO ${power_level}%"
-                                ;;
-                            2)
-                                power_level=$((power_level - 10))
-                                [ $power_level -lt 0 ] && power_level=0
-                                type_text "POWER DECREASED TO ${power_level}%"
-                                ;;
-                            3)
-                                type_text "RUNNING POWER DIAGNOSTICS..."
-                                sleep 2
-                                if [ $((RANDOM % 10)) -gt 7 ]; then
-                                    type_text "ANOMALY DETECTED IN POWER GRID"
-                                    power_level=$((power_level - 20))
-                                else
-                                    type_text "POWER SYSTEMS NOMINAL"
-                                fi
-                                ;;
-                        esac
-                        ;;
-                    [Rr])
-                        type_text "RETURNING TO MAIN MENU..."
-                        return
-                        ;;
-                    [Qq])
-                        type_text "DISCONNECTING FROM WOPR SYSTEM..."
-                        sleep 1
-                        exit 0
-                        ;;
-                esac
-                ;;
-            "transit")
-                case $cmd in
-                    [Cc])
-                        type_text "COURSE CORRECTION..."
-                        calculate_trajectory "transit" $fuel_level "$guidance_system"
-                        type_text "TRAJECTORY STATUS: $trajectory_status"
-                        ;;
-                    [Ll])
-                        type_text "CHECKING LIFE SUPPORT..."
-                        calculate_trajectory "transit" $fuel_level "$guidance_system"
-                        type_text "LIFE SUPPORT STATUS: $trajectory_status"
-                        ;;
-                    [Rr])
-                        type_text "MONITORING RADIATION..."
-                        calculate_trajectory "transit" $fuel_level "$guidance_system"
-                        type_text "RADIATION LEVEL: $trajectory_status"
-                        ;;
-                    [Ss])
-                        type_text "SYSTEM ADJUSTMENTS..."
-                        calculate_trajectory "transit" $fuel_level "$guidance_system"
-                        type_text "SYSTEM STATUS: $trajectory_status"
-                        ;;
-                    [Rr])
-                        type_text "RETURNING TO MAIN MENU..."
-                        return
-                        ;;
-                    [Qq])
-                        type_text "DISCONNECTING FROM WOPR SYSTEM..."
-                        sleep 1
-                        exit 0
-                        ;;
-                esac
-                ;;
-            "reentry")
-                case $cmd in
-                    [Hh])
-                        type_text "MONITORING HEAT SHIELD..."
-                        calculate_trajectory "reentry" $fuel_level "$guidance_system"
-                        type_text "HEAT SHIELD STATUS: $trajectory_status"
-                        ;;
-                    [Ll])
-                        type_text "CALCULATING LANDING COORDINATES..."
-                        calculate_trajectory "reentry" $fuel_level "$guidance_system"
-                        type_text "LANDING COORDINATES: $landing_coordinates"
-                        ;;
-                    [Cc])
-                        type_text "DEPLOYING CHUTES..."
-                        calculate_trajectory "reentry" $fuel_level "$guidance_system"
-                        type_text "CHUTES DEPLOYED"
-                        ;;
-                    [Ee])
-                        type_text "EMERGENCY PROCEDURES..."
-                        calculate_trajectory "reentry" $fuel_level "$guidance_system"
-                        type_text "REENTRY SUCCESSFUL"
-                        mission_success=1
-                        break
-                        ;;
-                    [Rr])
-                        type_text "RETURNING TO MAIN MENU..."
-                        return
-                        ;;
-                    [Qq])
-                        type_text "DISCONNECTING FROM WOPR SYSTEM..."
-                        sleep 1
-                        exit 0
-                        ;;
-                esac
-                ;;
-        esac
-
-        # Phase-specific events and checks
-        case $mission_phase in
-            "pre-launch")
-                if [ $system_checks -eq 10 ] && [ "$weather_condition" == "clear" ] && [ $ground_control_ready -eq 1 ]; then
-                    type_text "ALL SYSTEMS GO FOR LAUNCH"
-                    mission_phase="launch"
-                fi
-                ;;
-            "launch")
-                if [ "$trajectory_status" == "optimal" ] && [ $fuel_level -gt 70 ]; then
-                    type_text "ACHIEVING ORBITAL VELOCITY"
-                    mission_phase="orbit"
-                fi
-                ;;
-            "orbit")
-                if [ $fuel_level -lt 50 ]; then
-                    type_text "LOW FUEL - ORBITAL MANEUVER REQUIRED"
-                    mission_phase="transit"
-                fi
-                ;;
-            "transit")
-                if [ $fuel_level -lt 70 ]; then
-                    type_text "LOW FUEL - COURSE CORRECTION REQUIRED"
-                    mission_phase="transit"
-                fi
-                ;;
-            "reentry")
-                if [ $fuel_level -lt 50 ]; then
-                    type_text "LOW FUEL - REENTRY MANEUVER REQUIRED"
-                    mission_phase="reentry"
-                fi
-                ;;
-        esac
-
-        # Random events based on mission phase
-        if [ $((RANDOM % 10)) -eq 0 ]; then
-            case $mission_phase in
-                "launch")
-                    case $((RANDOM % 3)) in
-                        0)
-                            type_text "WARNING: UNEXPECTED VIBRATION DETECTED"
-                            trajectory_status="unstable"
-                            ;;
-                        1)
-                            type_text "ALERT: BOOSTER TEMPERATURE HIGH"
-                            fuel_level=$((fuel_level - 5))
-                            ;;
-                        2)
-                            type_text "CAUTION: MINOR TRAJECTORY DEVIATION"
-                            guidance_system="correction needed"
-                            ;;
-                    esac
-                    ;;
-                "orbit")
-                    case $((RANDOM % 3)) in
-                        0)
-                            type_text "WARNING: ORBITAL MANEUVER REQUIRED"
-                            mission_phase="transit"
-                            ;;
-                        1)
-                            type_text "ALERT: ORBITAL DEVIATION DETECTED"
-                            orbital_parameters="correction needed"
-                            ;;
-                        2)
-                            type_text "CAUTION: MINOR ORBITAL DEVIATION"
-                            orbital_parameters="stable"
-                            ;;
-                    esac
-                    ;;
-                "transit")
-                    case $((RANDOM % 3)) in
-                        0)
-                            type_text "WARNING: COURSE CORRECTION REQUIRED"
-                            mission_phase="transit"
-                            ;;
-                        1)
-                            type_text "ALERT: HIGH RADIATION DETECTED"
-                            radiation_level="high"
-                            ;;
-                        2)
-                            type_text "CAUTION: MINOR COURSE DEVIATION"
-                            orbital_parameters="stable"
-                            ;;
-                    esac
-                    ;;
-                "reentry")
-                    case $((RANDOM % 3)) in
-                        0)
-                            type_text "WARNING: HEAT SHIELD REQUIRED"
-                            mission_phase="reentry"
-                            ;;
-                        1)
-                            type_text "ALERT: LANDING COORDINATES CALCULATION"
-                            mission_phase="reentry"
-                            ;;
-                        2)
-                            type_text "CAUTION: MINOR LANDING DEVIATION"
-                            orbital_parameters="stable"
-                            ;;
-                    esac
-                    ;;
-            esac
-        fi
-
-        # Update mission time and resources
-        mission_elapsed_time=$((mission_elapsed_time + 1))
-        [ "$mission_phase" == "pre-launch" ] && countdown=$((countdown - 1))
-        
-        # Resource consumption
-        case $mission_phase in
-            "orbit"|"transit")
-                oxygen_level=$((oxygen_level - 1))
-                power_level=$((power_level - 1))
-                ;;
-        esac
-
-        sleep 1
     done
-
-    # Mission end status
-    clear
-    if [ $mission_success -eq 1 ]; then
-        type_text "MISSION LAUNCH SUCCESSFUL"
-        type_text "VEHICLE HAS CLEARED THE TOWER"
-        echo
-        echo "Final Statistics:"
-        echo "- Fuel Level: $fuel_level%"
-        echo "- Power Level: $power_level%"
-        echo "- Oxygen Level: $oxygen_level%"
-        echo "- Launch Weather: $weather_condition"
-    else
-        type_text "MISSION ABORTED"
-        case $abort_status in
-            "manual") type_text "REASON: MANUAL ABORT COMMAND" ;;
-            "technical") type_text "REASON: CRITICAL SYSTEM FAILURE" ;;
-            *) type_text "REASON: COUNTDOWN EXPIRED" ;;
-        esac
-    fi
-    
-    sleep 3
 }
 
 function analyze_tactical_situation() {
