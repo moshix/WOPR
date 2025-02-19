@@ -1,5 +1,5 @@
 # WOPR
-The NORAD operating system for WOPR, used during the 1980s for war simulations. 
+This the NORAD operating system for the WOPR mainframe computer, used during the 1980s for war simulations, in the US Strategic Command. 
 
 Below is an image of the last operating WOPR at NORAD, in the late 1980s. 
 
