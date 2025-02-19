@@ -10,9 +10,10 @@
 # v0.06 global thermonuclear war
 # v0.07 strategic defense network
 # v0.08 war operation plan response
-# v0.09 war operation plan response
+# v0.09 Improve tic tac algorithm 
 # v0.10 time out for login (to not keep docker container )
-
+# v0.11 Tic tac toe non-scrolling   
+# v0.12 better user input parsing
 
 # ANSI color codes
 GREEN='\033[0;32m'
@@ -115,9 +116,9 @@ EOF
     # Show "processing" animation
     echo -n "AUTHENTICATING"
     for i in {1..3}; do
-        sleep 0.5
+        sleep 0.1
         echo -n "."
-        play_beep
+        #play_beep
     done
     echo
     sleep 1
@@ -156,8 +157,11 @@ function select_targets() {
     done
     
     echo
-    type_text "SELECT UP TO 3 PRIMARY TARGETS (ENTER NUMBERS SEPARATED BY SPACES):"
+    type_text "SELECT UP TO 3 PRIMARY TARGETS (ENTER NUMBERS SEPARATED BY SPACES OR COMMAS):"
     read -r choices
+    
+    # Replace commas with spaces
+    choices=${choices//,/ }
     
     for choice in $choices; do
         if [[ $choice =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#targets[@]}" ]; then
@@ -257,6 +261,90 @@ function show_missile_art() {
     esac
 }
 
+function show_world_map() {
+    local source=$1
+    local target=$2
+    
+    # Conventional ASCII world map
+    cat << "MAP"
+    ┌──────────────── GLOBAL TRACKING SYSTEM ────────────────┐
+    │                      __   ___                          │
+    │         __     ____/  \_/   \              _          │
+    │    ____/  \___/                \    ___---´ \         │
+    │   /                             \__/          \_       │
+    │  /        NORTH                  \      ASIA   \      │
+    │ (       AMERICA      ATLANTIC     \             )     │
+    │  \                    OCEAN     _/-\_           \     │
+    │   \                           _/EUROPE\_         \    │
+    │    \_                    ___--´         \_       \    │
+    │      \              ___--      AFRICA    \       )    │
+    │       \    PACIFIC /            ___       \_    /     │
+    │        \   OCEAN  |        ___--   \        \__/     │
+    │      ___\         |    __--         \               │
+    │  ___/    \_      |___/     INDIAN    \             │
+    │ /   SOUTH  \      /         OCEAN      \           │
+    │(   AMERICA  )    /                      \          │
+    │ \___________/    \_______________________\         │
+    └────────────────────────────────────────────────────┘
+MAP
+
+    # City coordinates (x,y from top-left)
+    local city_names=("New York" "Moscow" "London" "Paris" "Tokyo" "Beijing" "Los Angeles" "Berlin" "Delhi" "Sydney")
+    local city_coords=("24,6" "45,5" "37,8" "38,8" "54,6" "50,6" "18,6" "39,8" "47,10" "56,15")
+    
+    # Find coordinates for source and target
+    local source_coords=""
+    local target_coords=""
+    
+    for i in "${!city_names[@]}"; do
+        if [ "${city_names[$i]}" = "$source" ]; then
+            source_coords="${city_coords[$i]}"
+        fi
+        if [ "${city_names[$i]}" = "$target" ]; then
+            target_coords="${city_coords[$i]}"
+        fi
+    done
+    
+    if [[ -n $source_coords && -n $target_coords ]]; then
+        local sx=${source_coords%,*}
+        local sy=${source_coords#*,}
+        local tx=${target_coords%,*}
+        local ty=${target_coords#*,}
+        
+        # Draw launch point
+        tput cup $((sy+2)) $sx
+        echo -ne "\033[32m●\033[0m"  # Green launch marker
+        
+        # Missile trajectory animation
+        local steps=12
+        for ((i=1; i<=steps; i++)); do
+            local px=$(( sx + (tx - sx) * i / steps ))
+            local py=$(( sy + (ty - sy) * i / steps ))
+            tput cup $((py+2)) $px
+            
+            case $((i % 4)) in
+                0) echo -ne "\033[31m·\033[0m";;
+                1) echo -ne "\033[31m·\033[0m";;
+                2) echo -ne "\033[31m·\033[0m";;
+                3) echo -ne "\033[31m·\033[0m";;
+            esac
+            
+            play_beep
+            sleep 0.1
+        done
+        
+        # Impact marker
+        tput cup $((ty+2)) $tx
+        echo -ne "\033[1;31m×\033[0m"  # Red impact marker
+        
+        # Show targeting data
+        tput cup 18 0
+        echo -e "\033[1mTARGET DATA:\033[0m"
+        echo "DISTANCE: $((RANDOM % 5000 + 3000))km | ETA: $((RANDOM % 20 + 10))min"
+        echo "TRAJECTORY: BALLISTIC | ALTITUDE: 1200km | VELOCITY: MACH 23"
+    fi
+}
+
 function simulate_strike() {
     local target=$1
     local missile_type=$2
@@ -268,25 +356,21 @@ function simulate_strike() {
     type_text "LAUNCHING $missile_type TOWARD $target"
     sleep 1
     
+    # Clear screen and show map with trajectory
     clear
-    show_missile_art "trajectory"
-    type_text "MISSILE TRACKING:"
-    for i in {1..5}; do
-        echo -n "."
-        play_beep
-        sleep 0.3
-    done
-    echo
+    local launch_city="Washington D.C."  # Default launch point
+    show_world_map "$launch_city" "$target"
     
+    # Move cursor below map for status messages
+    tput cup 22 0
     if [ $random_num -le $defense_prob ]; then
         type_text "ALERT: MISSILE INTERCEPTED BY DEFENSE SYSTEMS"
+        sleep 2
         return 1
     else
-        clear
-        show_missile_art "explosion"
         type_text "DIRECT HIT CONFIRMED"
         play_alert
-        sleep 1
+        sleep 2
         return 0
     fi
 }
@@ -343,18 +427,32 @@ function show_environmental_impact() {
 
 function calculate_strategic_value() {
     local target=$1
+    local base_value
+    
+    # Base strategic values for different target types
     case $target in
-        "New York") echo "95";;      # Financial center
-        "Moscow") echo "90";;        # Command center
-        "Washington D.C.") echo "100";; # Capital
-        "London") echo "85";;        # Major ally
-        "Beijing") echo "88";;       # Industrial/military
-        "Paris") echo "80";;         # NATO headquarters
-        "Los Angeles") echo "75";;   # Population/industry
-        "Tokyo") echo "82";;         # Tech/industry
-        "Berlin") echo "78";;        # European power
-        *) echo "70";;              # Default value
+        "Washington D.C.") base_value=95;;  # Capital
+        "New York") base_value=90;;         # Financial/population
+        "Los Angeles") base_value=85;;      # Population/industry
+        "Chicago") base_value=80;;          # Industry/transport
+        "Houston") base_value=75;;          # Energy/industry
+        "Seattle") base_value=70;;          # Tech/aerospace
+        "Miami") base_value=65;;            # Population/ports
+        "Denver") base_value=60;;           # Military/transport
+        "Boston") base_value=70;;           # Tech/education
+        "San Francisco") base_value=80;;    # Tech/finance
+        *) base_value=50;;
     esac
+    
+    # Add random variation to make AI less predictable
+    local variation=$((RANDOM % 20 - 10))  # -10 to +10
+    local final_value=$((base_value + variation))
+    
+    # Ensure value stays within bounds
+    [ $final_value -gt 100 ] && final_value=100
+    [ $final_value -lt 0 ] && final_value=0
+    
+    echo $final_value
 }
 
 function ai_select_targets() {
@@ -362,9 +460,33 @@ function ai_select_targets() {
     local selected_targets=()
     local priorities=()
     
-    # Calculate strategic value for each target
+    # AI strategy selection (random)
+    local strategy=$((RANDOM % 3))  # 0=balanced, 1=population, 2=infrastructure
+    
+    # Calculate strategic value for each target with strategy modifier
     for target in "${available_targets[@]}"; do
         local value=$(calculate_strategic_value "$target")
+        
+        # Apply strategy modifications
+        case $strategy in
+            0) value=$((value + RANDOM % 10));;  # Balanced approach
+            1) # Population-focused
+                case $target in
+                    "New York"|"Los Angeles"|"Chicago") value=$((value + 20));;
+                    "Houston"|"Miami") value=$((value + 10));;
+                esac
+                ;;
+            2) # Infrastructure-focused
+                case $target in
+                    "Washington D.C."|"Seattle"|"Denver") value=$((value + 20));;
+                    "Houston"|"San Francisco") value=$((value + 10));;
+                esac
+                ;;
+        esac
+        
+        # Add some randomness to make decisions less predictable
+        value=$((value + RANDOM % 15))
+        
         priorities+=("$value:$target")
     done
     
@@ -372,8 +494,9 @@ function ai_select_targets() {
     IFS=$'\n' sorted=($(sort -rn <<<"${priorities[*]}"))
     unset IFS
     
-    # Select top 3 highest value targets
-    for ((i=0; i<3; i++)); do
+    # Select targets based on strategy
+    local num_targets=$((2 + RANDOM % 2))  # Select 2-3 targets
+    for ((i=0; i<num_targets && i<${#sorted[@]}; i++)); do
         target="${sorted[$i]#*:}"
         selected_targets+=("$target")
     done
@@ -386,15 +509,21 @@ function ai_select_missile() {
     local distance=$2
     local value=$(calculate_strategic_value "$target")
     
-    if [ $value -gt 90 ]; then
-        # High-value targets get ICBMs for maximum probability
+    # Add randomness to missile selection
+    local random_factor=$((RANDOM % 100))
+    
+    if [ $value -gt 85 ] && [ $random_factor -gt 30 ]; then
+        # High-value targets usually get ICBMs
         echo "ICBM"
-    elif [ $distance -gt 4000 ]; then
-        # Long-range targets get SLBMs for stealth
+    elif [ $distance -gt 3500 ] || [ $random_factor -gt 70 ]; then
+        # Long-range targets usually get SLBMs
         echo "SLBM"
-    else
-        # Shorter range targets get MRBMs for quick strike
+    elif [ $random_factor -gt 50 ]; then
+        # Sometimes use MRBMs for surprise
         echo "MRBM"
+    else
+        # Default to ICBM for reliability
+        echo "ICBM"
     fi
 }
 
@@ -418,14 +547,19 @@ EOF
     sleep 1
     echo
     
-    # Initialize AI strategy
+    # Initialize game state
     local ai_first_strike=0
     local ai_retaliation_ready=1
     local ai_defense_active=1
-    local ai_counter_force=0  # 0 for counter-value, 1 for counter-force
+    local successful_strikes=0
+    local total_strikes=0
+    local casualties=0
+    local fallout_radius=0
+    local player_score=0
+    local ai_score=0
     
     if [ $((RANDOM % 100)) -lt 30 ]; then
-        ai_first_strike=1  # 30% chance AI strikes first
+        ai_first_strike=1
     fi
     
     if [ $ai_first_strike -eq 1 ]; then
@@ -433,17 +567,27 @@ EOF
         play_alert
         sleep 1
         
-        # AI launches first strike
         local ai_targets=($(ai_select_targets))
         for target in "${ai_targets[@]}"; do
             local missile_type=$(ai_select_missile "$target" $((RANDOM % 5000 + 2000)))
+            clear
+            show_world_map "Moscow" "$target"
+            type_text "ENEMY MISSILE TARGETING $target"
+            sleep 2
+            
             if simulate_strike "$target" "$missile_type"; then
-                show_detailed_casualties "$target" "$missile_type"
+                local target_casualties=$((RANDOM % 5000000 + 1000000))
+                casualties=$((casualties + target_casualties))
+                fallout_radius=$((fallout_radius + RANDOM % 1000 + 500))
+                type_text "DIRECT HIT ON $target - $((target_casualties / 1000000))M CASUALTIES"
+            else
+                type_text "MISSILE INTERCEPTED - $target DEFENDED"
             fi
-            sleep 1
+            sleep 2
         done
         
         type_text "INITIATING COUNTER-STRIKE PROTOCOLS"
+        sleep 1
     fi
     
     # Player's turn
@@ -451,67 +595,69 @@ EOF
         return
     fi
     
-    local successful_strikes=0
-    local total_strikes=0
-    
     # Process each selected target
     for target in "${selected[@]}"; do
+        clear
+        type_text "SELECTING MISSILE TYPE FOR $target"
         local missile_type=$(select_missile_type "$target")
         total_strikes=$((total_strikes + 1))
         
+        clear
+        show_world_map "Washington D.C." "$target"
+        type_text "LAUNCHING $missile_type TOWARD $target"
+        sleep 2
+        
         if simulate_strike "$target" "$missile_type"; then
             successful_strikes=$((successful_strikes + 1))
-            show_detailed_casualties "$target" "$missile_type"
+            local target_casualties=$((RANDOM % 5000000 + 1000000))
+            casualties=$((casualties + target_casualties))
+            fallout_radius=$((fallout_radius + RANDOM % 1000 + 500))
+            player_score=$((player_score + 100))
+            type_text "CONFIRMED STRIKE ON $target - $((target_casualties / 1000000))M CASUALTIES"
+        else
+            type_text "MISSILE INTERCEPTED - $target DEFENDED"
         fi
-        sleep 1
+        sleep 2
     done
     
-    # Enhanced AI retaliation
+    # AI Retaliation
     if [ $ai_retaliation_ready -eq 1 ]; then
-        echo
-        type_text "ENEMY RESPONSE ANALYSIS:"
-        if [ $successful_strikes -gt 2 ]; then
-            type_text "MAXIMUM RETALIATION AUTHORIZED"
-            ai_counter_force=1
-            retaliation_count=$((successful_strikes + 2))
-        else
-            type_text "PROPORTIONAL RESPONSE AUTHORIZED"
-            retaliation_count=$successful_strikes
-        fi
+        type_text "ENEMY RESPONSE DETECTED"
+        play_alert
+        sleep 1
         
-        # AI selects strategic targets based on remaining capabilities
+        local retaliation_count=$((successful_strikes + (RANDOM % 2)))
+        ai_score=$((retaliation_count * 100))
+        
         local ai_targets=($(ai_select_targets))
-        echo
-        type_text "ENEMY RETALIATION TARGETS:"
-        
         for ((i=0; i<retaliation_count && i<${#ai_targets[@]}; i++)); do
             local target="${ai_targets[$i]}"
             local missile_type=$(ai_select_missile "$target" $((RANDOM % 5000 + 2000)))
             
-            if [ $ai_counter_force -eq 1 ]; then
-                # Target military installations
-                type_text "TARGETING MILITARY INSTALLATION NEAR $target"
-            else
-                # Target population centers
-                type_text "TARGETING URBAN CENTER: $target"
-            fi
+            clear
+            show_world_map "Moscow" "$target"
+            type_text "ENEMY MISSILE TARGETING $target"
+            sleep 2
             
             if simulate_strike "$target" "$missile_type"; then
-                show_detailed_casualties "$target" "$missile_type"
+                local target_casualties=$((RANDOM % 5000000 + 1000000))
+                casualties=$((casualties + target_casualties))
+                fallout_radius=$((fallout_radius + RANDOM % 1000 + 500))
+                type_text "DIRECT HIT ON $target - $((target_casualties / 1000000))M CASUALTIES"
+            else
+                type_text "MISSILE INTERCEPTED - $target DEFENDED"
             fi
+            sleep 2
         done
     fi
     
-    # Calculate final outcome
-    local player_score=$((successful_strikes * 100))
-    local ai_score=$((retaliation_count * 100))
-    
-    type_text "FINAL STRATEGIC ANALYSIS:"
+    # Show final outcome
+    clear
     echo "----------------------------------------"
-    echo "Player Strike Success: $successful_strikes"
-    echo "Enemy Strike Success: $retaliation_count"
+    echo "FINAL STRATEGIC ANALYSIS:"
+    echo "Total Casualties: $((casualties / 1000000))M"
+    echo "Fallout Area: ${fallout_radius}km²"
     echo "Strategic Position: $([ $player_score -gt $ai_score ] && echo "ADVANTAGE" || echo "DISADVANTAGE")"
-    echo
     
     show_environmental_impact $((successful_strikes + retaliation_count))
     
@@ -2169,7 +2315,14 @@ EOF
     type_text "HUMAN PLAYER: X    WOPR: O"
     type_text "SELECT POSITION BY ENTERING ITS NUMBER:"
     
+    # Save the initial cursor position for the game board
+    local board_line=$(($(tput lines) - 15))
+    
     while [ $game_over -eq 0 ]; do
+        # Move cursor to board position and clear below
+        tput cup $board_line 0
+        tput ed
+        
         draw_board "${board[@]}"
         
         if [ "$current_player" == "X" ]; then
@@ -2188,13 +2341,17 @@ EOF
                     ;;
                 *)
                     if ! [[ $position =~ ^[1-9]$ ]]; then
+                        tput cup $((board_line + 12)) 0
                         type_text "INVALID MOVE. ENTER A NUMBER 1-9."
+                        sleep 1
                         continue
                     fi
                     
                     position=$((position - 1))
                     if [[ ${board[$position]} == "X" || ${board[$position]} == "O" ]]; then
+                        tput cup $((board_line + 12)) 0
                         type_text "POSITION ALREADY TAKEN. TRY AGAIN."
+                        sleep 1
                         continue
                     fi
                     
@@ -2203,10 +2360,12 @@ EOF
                     ;;
             esac
         else
+            tput cup $((board_line + 12)) 0
             type_text "WOPR ANALYZING POSITION..."
             sleep 1
             local ai_move=$(get_ai_move "${board[@]}")
             board[$ai_move]="O"
+            tput cup $((board_line + 12)) 0
             type_text "WOPR SELECTS POSITION $((ai_move + 1))"
             play_alert
         fi
@@ -2215,7 +2374,9 @@ EOF
         winner=$(check_winner "${board[@]}")
         
         if [[ -n "$winner" ]]; then
+            tput cup $board_line 0
             draw_board "${board[@]}"
+            tput cup $((board_line + 12)) 0
             if [ "$winner" == "X" ]; then
                 type_text "CONGRATULATIONS - YOU WIN"
                 type_text "UPDATING GAME THEORY DATABASE..."
@@ -2225,7 +2386,9 @@ EOF
             fi
             game_over=1
         elif [ $moves -eq 9 ]; then
+            tput cup $board_line 0
             draw_board "${board[@]}"
+            tput cup $((board_line + 12)) 0
             type_text "GAME DRAWN - STRATEGIC STALEMATE"
             game_over=1
         fi
