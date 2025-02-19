@@ -7,7 +7,7 @@ Below is an image of the last operating WOPR at NORAD, in the late 1980s.
   <img src="WOPR.jpg" width="500">
 </p>
 One notable event, was when WOPR staged a massive Soviet first strike with hundreds of missiles, submarines, and bombers. Believing the attack to be genuine, NORAD prepared to retaliate, and only narrowly avoided a nuclear apocalypse.
-
+<br>
 The full WOPR OS is included here, for educational purposes only. 
 
 <p align="center">
