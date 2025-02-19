@@ -16,6 +16,7 @@
 # v0.12 better user input parsing
 # v0.13 fix NASA game 
 # v0.14 submarine command center fixed map
+# v0.15 voice synthesis on Macos
 
 # ANSI color codes
 GREEN='\033[0;32m'
@@ -126,12 +127,20 @@ EOF
     sleep 1
     
     type_text "GREETINGS PROFESSOR FALKEN."
+    # Add macOS voice synthesis
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        say -v Zarvox "GREETINGS PROFESSOR FALKEN"
+    fi
     sleep 1
 }
 
 function show_games() {
     echo
     type_text "SHALL WE PLAY A GAME?"
+    # Add macOS voice synthesis
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        say -v Zarvox "SHALL WE PLAY A GAME?"
+    fi
     echo
     echo "Available systems:"
     echo "----------------"
@@ -1463,7 +1472,7 @@ EOF
         else
             tput cup $((board_line + 12)) 0
             type_text "WOPR ANALYZING POSITION..."
-            sleep 1
+            sleep 0.5
             local ai_move=$(get_ai_move "${board[@]}")
             board[$ai_move]="O"
             tput cup $((board_line + 12)) 0
