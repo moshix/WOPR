@@ -12,7 +12,7 @@ Below is an image of the last operating WOPR at NORAD, in the late 1980s.
 </p>
 One notable event, was when WOPR staged a massive Soviet first strike with hundreds of missiles, submarines, and bombers. Believing the attack to be genuine, NORAD prepared to retaliate, and only narrowly avoided a nuclear apocalypse.
 <br><br>
-The full WOPR OS is included here, for educational purposes only. 
+The full WOPR OS is included here, for educational purposes only. <br><br>
 <br> 
 <p align="center">
   <img src="screenshot.png" width="500">
@@ -24,7 +24,7 @@ Using WOPR
 chmod +x wopr.sh<br>
 ./wopr.sh 
 
-WOPR is best served thru a telnet or ssh connection, so other users can learn from this historical operating system. 
+WOPR is best served thru a telnet or ssh connection, so other users can learn from this historical operating system. Runs on every operating system with a bash shell. 
 
 
 Discord 
