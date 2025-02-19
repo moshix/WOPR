@@ -1,0 +1,2 @@
+# WOPR
+a WOPR implementation
